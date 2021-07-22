@@ -135,6 +135,12 @@ iperf_get_verbose(struct iperf_test *ipt)
 }
 
 int
+iperf_get_debug(struct iperf_test *ipt)
+{
+    return ipt->debug;
+}
+
+int
 iperf_get_control_socket(struct iperf_test *ipt)
 {
     return ipt->ctrl_sck;
@@ -411,12 +417,24 @@ iperf_get_test_congestion_control(struct iperf_test* ipt)
     return ipt->congestion;
 }
 
+uint64_t
+iperf_get_test_bytes_sent(struct iperf_test* ipt)
+{
+    return ipt->bytes_sent;
+}
+
 /************** Setter routines for some fields inside iperf_test *************/
 
 void
 iperf_set_verbose(struct iperf_test *ipt, int verbose)
 {
     ipt->verbose = verbose;
+}
+
+void
+iperf_set_debug(struct iperf_test *ipt, int debug)
+{
+    ipt->debug = debug;
 }
 
 void
@@ -765,6 +783,30 @@ void
 iperf_set_test_congestion_control(struct iperf_test* ipt, char* cc)
 {
     ipt->congestion = strdup(cc);
+}
+
+void
+iperf_set_test_file(struct iperf_test* ipt, char* file)
+{
+    ipt->diskfile_name = strdup(file);
+}
+
+void
+iperf_set_test_snd_fileseek(struct iperf_test* ipt, int seek)
+{
+    ipt->diskfile_seek = seek;
+}
+
+void
+iperf_set_test_rcv_fileappend(struct iperf_test* ipt, int append)
+{
+    ipt->diskfile_append = append;
+}
+
+void
+iperf_set_test_rcv_reliable(struct iperf_test* ipt, int reliable)
+{
+    ipt->reliable_receive_in_full = reliable;
 }
 
 
