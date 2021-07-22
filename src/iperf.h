@@ -276,6 +276,8 @@ struct iperf_test
     int       duration;                         /* total duration of test (-t flag) */
     char     *diskfile_name;			/* -F option */
     int       reliable_receive_in_full;     /* -r option. For reciever only. */
+    int       diskfile_seek;            /* optional with -F option (sender only) */ 
+    int       diskfile_append;          /* optional with -F option (receiver only) */
     int       affinity, server_affinity;	/* -A option */
 #if defined(HAVE_CPUSET_SETAFFINITY)
     cpuset_t cpumask;
