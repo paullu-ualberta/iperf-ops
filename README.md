@@ -1,80 +1,145 @@
-iperf3:  A TCP, UDP, and SCTP network bandwidth measurement tool
-================================================================
+iperf-reliable: Adding reliable data transfer service to iperf3
+==============================================================
+
+Authors: 
+- Hamid Anvari (hanvari@ualberta.ca)
+- Paul Lu (paullu@ualberta.ca)
 
 Summary
 -------
 
-iperf is a tool for active measurements of the maximum achievable
-bandwidth on IP networks.  It supports tuning of various parameters
-related to timing, protocols, and buffers.  For each test it reports
-the measured throughput / bitrate, loss, and other parameters.
+iperf-reliable is an augmentation of the well-known 
+iperf3
+network benchmarking tool,
+adding a reliable file transfer service.
 
-This version, sometimes referred to as iperf3, is a redesign of an
-original version developed at NLANR/DAST.  iperf3 is a new
-implementation from scratch, with the goal of a smaller, simpler code
-base, and a library version of the functionality that can be used in
-other programs. iperf3 also has a number of features found in other tools
-such as nuttcp and netperf, but were missing from the original iperf.
-These include, for example, a zero-copy mode and optional JSON output.
-Note that iperf3 is *not* backwards compatible with the original iperf.
+The original iperf3 includes a `-F` switch allowing 
+to read from, or write to, a file for a benchmarking test.
+However, that is not a reliable transfer service.
 
-Primary development for iperf3 takes place on CentOS Linux, FreeBSD,
-and macOS.  At this time, these are the only officially supported
-platforms, however there have been some reports of success with
-OpenBSD, NetBSD, Android, Solaris, and other Linux distributions.
+iperf-reliable introduces the following features:
+- Reliable data transfer
+- Partial data transfer through seeking a location in the source file
+- Appending the received data to the end of the destination file (rather than overwriting the whole file)
 
-iperf3 is principally developed by ESnet / Lawrence Berkeley National
-Laboratory.  It is released under a three-clause BSD license.
+The reliable and partial data transfer 
+facilities are only limited to the case
+of single data stream.
+It does not account for parallel data streams.
 
-For more information see: https://software.es.net/iperf
+A few modifications and adjustments to
+enable accurate byte counting and file transfer
+have already been contributed to the original 
+iperf3 repository (
+[#1036](https://github.com/esnet/iperf/pull/1112),
+[#1113](https://github.com/esnet/iperf/pull/1113),
+[#1114](https://github.com/esnet/iperf/pull/1114),
+[#1115](https://github.com/esnet/iperf/pull/1115),
+[#1116](https://github.com/esnet/iperf/pull/1116)
+).
+However, the reliable and partial file transfer 
+services were not directly targeted to the scope of
+the iperf3 project, hence we made them available here
+as a separate open-source project.
 
-Source code and issue tracker: https://github.com/esnet/iperf
 
-Obtaining iperf3
-----------------
-
-Downloads of iperf3 are available at:
-
-    https://downloads.es.net/pub/iperf/
-
-To check out the most recent code, clone the git repository at:
-
-    https://github.com/esnet/iperf.git
-
-Building iperf3
+Building iperf-reliable
 ---------------
 
-### Prerequisites: ###
+The build process for iperf-reliable is identical
+to original iperf3 benchmarking tool.
+Please follow the instructions from official iperf3 
+repository here:
+https://github.com/esnet/iperf
 
-None.
 
-### Building ###
+Test Cases / How to Run
+----------
 
-    ./configure; make; make install
+For all test cases the following assumptions are made: 
+- two nodes with hostnames `sender` and `receiver` that are connected over a network path.
+- `sender` has a sufficiently large (e.g. 14GB) data file readable and ready for transfer located at `/dev/shm/src.file`
+- `receiver` has `/dev/shm/` writable with sufficient space
 
-(Note: If configure fails, try running `./bootstrap.sh` first)
+### Case#1 - Default behavior to be unreliable data transfer!
 
-Invoking iperf3
----------------
+```bash
+# start server
+receiver$ ./iperf3 -s -F /dev/shm/dst.file -V -d
+# send file
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file -d
+# get checksums and compare. assert non-equal
+sender$ md5sum /dev/shm/src.file 
+receiver$ md5sum /dev/shm/dst.file
+# cleanup
+receiver$ rm /dev/shm/dst.file
+```
 
-iperf3 includes a manual page listing all of the command-line options.
-The manual page is the most up-to-date reference to the various flags and parameters.
+### Case#2 - Full (reliable) data/file transfer using -r switch
 
-For sample command line usage, see: 
+```bash
+# start server
+receiver$ ./iperf3 -s -F /dev/shm/dst.file -V -d -r
+# send file
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file -d
+# get checksums and compare. assert equal
+sender$ md5sum /dev/shm/src.file 
+receiver$ md5sum /dev/shm/dst.file
+# cleanup
+receiver$ rm /dev/shm/dst.file
+```
 
-https://fasterdata.es.net/performance-testing/network-troubleshooting-tools/iperf/
+### Case#3 - Partial file transfer with time-interval (-t) in reliable mode (-r)
 
-Using the default options, iperf is meant to show typical well
-designed application performance.  "Typical well designed application"
-means avoiding artificial enhancements that work only for testing
-(such as splice()'ing the data to /dev/null).  iperf does also have
-flags for "extreme best case" optimizations, but they must be
-explicitly activated.
+```bash
+# start server
+receiver$ ./iperf3 -s -F /dev/shm/dst.file -V -d -r
+# send file
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file -t5 -d
+# make a copy of src.file and truncate its size to match the size transferred for server (in output of last command)
+sender$ cp /dev/shm/src.file /dev/shm/src.partial
+sender$ truncate --size=<bytes-count> /dev/shm/src.partial
+# get checksums and compare. assert equal
+sender$ md5sum /dev/shm/src.partial 
+receiver$ md5sum /dev/shm/dst.file
+# cleanup
+sender$ rm /dev/shm/src.partial
+receiver$ rm /dev/shm/dst.file
+```
 
-These flags include:
+### Case#4 - Partial file transfer with seeking in file (-F name,seek#)
 
-    -Z, --zerocopy            use a 'zero copy' sendfile() method of sending data
-    -A, --affinity n/n,m      set CPU affinity
+```bash
+# start server
+receiver$ ./iperf3 -s -F /dev/shm/dst.file -V -d -r
+# send file
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file,400000000 -t5 -d
+# make a copy of src.file to start at byte 400000000 (as in last commnad) and compare with destination file
+sender$ dd bs=400000000 skip=1 if=/dev/shm/src.file of=/dev/shm/src.trimmed
+# get checksums and compare. assert equal
+sender$ md5sum /dev/shm/src.trimmed
+receiver$ md5sum /dev/shm/dst.file
+# cleanup
+sender$ rm /dev/shm/src.trimmed
+receiver$ rm /dev/shm/dst.file
+```
+
+### Case#5 - Multi-part file transfer with server appending to a single file (-F name,append)
+
+```bash
+# start server
+receiver$ ./iperf3 -s -F /dev/shm/dst.file,append -V -d -r
+# send file, for a few seconds (not sufficient to transfer the whole file)
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file -t5 -d
+# consequent send file, seeking by number of bytes sent in the last command, with no time or bytes termination condition (i.e. sending to the end of file)
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file,<bytes-count> -d
+# get checksums and compare. assert equal
+sender$ md5sum /dev/shm/src.file
+receiver$ md5sum /dev/shm/dst.file
+# cleanup
+receiver$ rm /dev/shm/dst.file
+```
+
 
 Bug Reports
 -----------
@@ -84,7 +149,7 @@ latest version of the code, and confirm that your issue has not
 already been fixed.  Then submit to the iperf3 issue tracker on
 GitHub:
 
-https://github.com/esnet/iperf/issues
+https://github.com/hanvari/iperf-reliable/issues
 
 In your issue submission, please indicate the version of iperf3 and
 what platform you're trying to run on (provide the platform
@@ -97,79 +162,21 @@ sensitive information.
 If you have a question about usage or about the code, please do *not*
 submit an issue.  Please use one of the mailing lists for that.
 
-Relation to iperf 2.x
----------------------
-
-Note that iperf2 is no longer being developed by its original
-maintainers.  However, beginning in 2014, another developer began
-fixing bugs and enhancing functionality, and generating releases of
-iperf2.  Both projects (as of late 2017) are currently being developed
-actively, but independently.  The continuing iperf2 development
-project can be found at https://sourceforge.net/projects/iperf2/.
-
-iperf3 contains a number of options and functions not present in
-iperf2.  In addition, some flags are changed from their iperf2
-counterparts:
-
-    -C, --linux-congestion    set congestion control algorithm (Linux only)
-                              (-Z in iperf2)
-    --bidir                   bidirectional testing mode
-                              (-d in iperf2)
-
-Some iperf2 options are not available in iperf3:
-
-    -r, --tradeoff           Do a bidirectional test individually
-    -T, --ttl                time-to-live, for multicast (default 1)
-    -x, --reportexclude [CDMSV]   exclude C(connection) D(data) M(multicast) 
-                                  S(settings) V(server) reports
-    -y, --reportstyle C      report as a Comma-Separated Values
-
-Also removed is the ability to set the options via environment
-variables.
-
 Known Issues
 ------------
 
 A set of known issues is maintained on the iperf3 Web pages:
 
-https://software.es.net/iperf/dev.html#known-issues
+...
 
-Links
+Related Publications
 -----
 
-This section lists links to user-contributed Web pages regarding
-iperf3.  ESnet and Lawrence Berkeley National Laboratory bear no
-responsibility for the content of these pages.
+* to be completed
 
-* Installation instructions for Debian Linux (by Cameron Camp
-  <cameron@ivdatacenter.com>):
-
-  http://cheatsheet.logicalwebhost.com/iperf-network-testing/
 
 Copyright
 ---------
 
-iperf, Copyright (c) 2014-2021, The Regents of the University of
-California, through Lawrence Berkeley National Laboratory (subject
-to receipt of any required approvals from the U.S. Dept. of
-Energy).  All rights reserved.
-
-If you have questions about your rights to use or distribute this
-software, please contact Berkeley Lab's Technology Transfer
-Department at TTD@lbl.gov.
-
-NOTICE.  This software is owned by the U.S. Department of Energy.
-As such, the U.S. Government has been granted for itself and others
-acting on its behalf a paid-up, nonexclusive, irrevocable,
-worldwide license in the Software to reproduce, prepare derivative
-works, and perform publicly and display publicly.  Beginning five
-(5) years after the date permission to assert copyright is obtained
-from the U.S. Department of Energy, and subject to any subsequent
-five (5) year renewals, the U.S. Government is granted for itself
-and others acting on its behalf a paid-up, nonexclusive,
-irrevocable, worldwide license in the Software to reproduce,
-prepare derivative works, distribute copies to the public, perform
-publicly and display publicly, and to permit others to do so.
-
-This code is distributed under a BSD style license, see the LICENSE
-file for complete information.
+This code is distributed under a BSD style license, 
+see the LICENSE file for complete information.
