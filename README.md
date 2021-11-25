@@ -1,4 +1,4 @@
-iperf-reliable: Adding reliable data transfer service to iperf3
+iperf-OPS and -reliable: Adding reliable data transfer service to iperf3
 ==============================================================
 
 Authors: 
