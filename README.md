@@ -113,7 +113,7 @@ receiver$ rm /dev/shm/dst.file
 # start server
 receiver$ ./iperf3 -s -F /dev/shm/dst.file -V -d -r
 # send file
-sender$ ./iperf3 -c receiver -F /dev/shm/src.file,400000000 -t5 -d
+sender$ ./iperf3 -c receiver -F /dev/shm/src.file,400000000 -d
 # make a copy of src.file to start at byte 400000000 (as in last commnad) and compare with destination file
 sender$ dd bs=400000000 skip=1 if=/dev/shm/src.file of=/dev/shm/src.trimmed
 # get checksums and compare. assert equal
