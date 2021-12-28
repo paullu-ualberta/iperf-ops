@@ -51,14 +51,17 @@
 #endif /* TCP_CA_NAME_MAX */
 #endif /* HAVE_TCP_CONGESTION */
 
-
 int
 iperf_create_streams(struct iperf_test *test, int sender)
 {
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+        return -1;
+    }
     int i, s;
 #if defined(HAVE_TCP_CONGESTION)
     int saved_errno;
-    static int sender_id = 0; /* use this to set congestion control based on even or odd */
 #endif /* HAVE_TCP_CONGESTION */
     struct iperf_stream *sp;
 
@@ -74,26 +77,13 @@ iperf_create_streams(struct iperf_test *test, int sender)
 #if defined(HAVE_TCP_CONGESTION)
 	if (test->protocol->id == Ptcp) {
 	    if (test->congestion) {
-                if(sender_id % 2 == 0) { /* CC testing hack: only do this for even numbered senders */
-	            /*
-	            printf("setting cong cntrl on stream %d to %s \n",sender_id,test->congestion);
-		    */
-		    if (setsockopt(s, IPPROTO_TCP, TCP_CONGESTION, test->congestion, strlen(test->congestion)) < 0) {
-		        saved_errno = errno;
-		        close(s);
-		        errno = saved_errno;
-		        i_errno = IESETCONGESTION;
-		        return -1;
-		    } 
-		} else { /* for CC hack: sleep N seconds to give even numbered streams (eg: cubic) a head start */ 
-                    int sleep_time = 1;
-                    /*
-	            printf("default cong cntrl on stream %d \n",sender_id);
-	            printf("sleeping for %d seconds to let stream %d have a head start \n",sleep_time, sender_id-1);
-                    */
-		    sleep(sleep_time);
-                }
-                sender_id++;
+		if (setsockopt(s, IPPROTO_TCP, TCP_CONGESTION, test->congestion, strlen(test->congestion)) < 0) {
+		    saved_errno = errno;
+		    close(s);
+		    errno = saved_errno;
+		    i_errno = IESETCONGESTION;
+		    return -1;
+		}
 	    }
 	    {
 		socklen_t len = TCP_CA_NAME_MAX;
@@ -173,6 +163,12 @@ create_client_timers(struct iperf_test * test)
 {
     struct iperf_time now;
     TimerClientData cd;
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+        i_errno = IEINITTEST;
+        return -1;
+    }
 
     if (iperf_time_now(&now) < 0) {
 	i_errno = IEINITTEST;
@@ -187,7 +183,7 @@ create_client_timers(struct iperf_test * test)
             i_errno = IEINITTEST;
             return -1;
 	}
-    } 
+    }
     if (test->stats_interval != 0) {
         test->stats_timer = tmr_create(&now, client_stats_timer_proc, cd, test->stats_interval * SEC_TO_US, 1);
         if (test->stats_timer == NULL) {
@@ -228,6 +224,11 @@ create_client_omit_timer(struct iperf_test * test)
 {
     struct iperf_time now;
     TimerClientData cd;
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+        return -1;
+    }
 
     if (test->omit == 0) {
 	test->omit_timer = NULL;
@@ -254,6 +255,12 @@ iperf_handle_message_client(struct iperf_test *test)
     int rval;
     int32_t err;
 
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+	i_errno = IEINITTEST;
+        return -1;
+    }
     /*!!! Why is this read() and not Nread()? */
     if ((rval = read(test->ctrl_sck, (char*) &test->state, sizeof(signed char))) <= 0) {
         if (rval == 0) {
@@ -349,6 +356,11 @@ iperf_handle_message_client(struct iperf_test *test)
 int
 iperf_connect(struct iperf_test *test)
 {
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+        return -1;
+    }
     FD_ZERO(&test->read_set);
     FD_ZERO(&test->write_set);
 
@@ -360,6 +372,13 @@ iperf_connect(struct iperf_test *test)
 	test->ctrl_sck = netdial(test->settings->domain, Ptcp, test->bind_address, test->bind_dev, 0, test->server_hostname, test->server_port, test->settings->connect_timeout);
     if (test->ctrl_sck < 0) {
         i_errno = IECONNECT;
+        return -1;
+    }
+
+    // set TCP_NODELAY for lower latency on control messages
+    int flag = 1;
+    if (setsockopt(test->ctrl_sck, IPPROTO_TCP, TCP_NODELAY, (char *) &flag, sizeof(int))) {
+        i_errno = IESETNODELAY;
         return -1;
     }
 
@@ -383,7 +402,7 @@ iperf_connect(struct iperf_test *test)
             test->ctrl_sck_mss = opt;
         }
         else {
-            char str[128];
+            char str[WARN_STR_LEN];
             snprintf(str, sizeof(str),
                      "Ignoring nonsense TCP MSS %d", opt);
             warning(str);
@@ -430,7 +449,7 @@ iperf_connect(struct iperf_test *test)
 	 */
 	if (test->ctrl_sck_mss > 0 &&
 	    test->settings->blksize > test->ctrl_sck_mss) {
-	    char str[128];
+	    char str[WARN_STR_LEN];
 	    snprintf(str, sizeof(str),
 		     "UDP block size %d exceeds TCP MSS %d, may result in fragmentation / drops", test->settings->blksize, test->ctrl_sck_mss);
 	    warning(str);
@@ -444,6 +463,11 @@ iperf_connect(struct iperf_test *test)
 int
 iperf_client_end(struct iperf_test *test)
 {
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+        return -1;
+    }
     struct iperf_stream *sp;
 
     /* Close all stream sockets */
@@ -483,6 +507,12 @@ iperf_run_client(struct iperf_test * test)
     int64_t t_usecs;
     int64_t timeout_us;
     int64_t rcv_timeout_us;
+
+    if (NULL == test)
+    {
+        iperf_err(NULL, "No test\n");
+        return -1;
+    }
 
     if (test->logfile)
         if (iperf_open_logfile(test) < 0)
@@ -556,7 +586,7 @@ iperf_run_client(struct iperf_test * test)
 
             }
         }
-        
+
 	if (result > 0) {
             if (rcv_timeout_us > 0) {
                 iperf_time_now(&last_receive_time);
@@ -666,13 +696,15 @@ iperf_run_client(struct iperf_test * test)
     return 0;
 
   cleanup_and_fail:
-    iperf_errexit(test, "error - %s", iperf_strerror(i_errno));
     iperf_client_end(test);
     if (test->json_output) {
-	if (iperf_json_finish(test) < 0)
-	    return -1;  // It is o.k. that error will be logged later outside the JSON output since its creation failed
+        cJSON_AddStringToObject(test->json_top, "error", iperf_strerror(i_errno));
+        iperf_json_finish(test);
+        iflush(test);
+        // Return 0 and not -1 since all terminating function were done here.
+        // Also prevents error message logging outside the already closed JSON output.
+        return 0;
     }
     iflush(test);
-    return 0;   // Return 0 and not -1 since all terminating function were done here.
-                // Also prevents error message logging outside the already closed JSON output.
+    return -1;
 }
